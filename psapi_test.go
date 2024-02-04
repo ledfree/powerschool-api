@@ -7,11 +7,11 @@ import (
 func TestGetToken(t *testing.T) {
 	ps := ApiConfig{TestUrl, TestClientId, TestClientSecret}
 
-	s, token, err := ps.GetAccessToken()
+	s, _, err := ps.GetAccessToken()
 	if err != nil {
-		t.Fatalf("fail : GetAccessToken - %s", err)
-	} else {
-		t.Logf("Status       : %d", s)
-		t.Logf("Bearer Token : %s", token)
+		t.Fatalf("fail : GetAccessToken - status code = %d; %s", s, err)
+	}
+	if s != 200 {
+		t.Fatalf("fail : GetAccessToken - status code = %d; %s", s, err)
 	}
 }

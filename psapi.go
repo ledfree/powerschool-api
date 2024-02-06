@@ -12,7 +12,8 @@ import (
 )
 
 const (
-	strGetToken string = "https://%s/oauth/access_token/"
+	strGetToken  string = "https://%s/oauth/access_token/"
+	strTimeCheck string = "https://%s/ws/v1/time"
 )
 
 type authErrorDetails struct {
@@ -32,29 +33,15 @@ type ApiConfig struct {
 	ClientSecret string
 }
 
-func (a ApiConfig) toBase64() string {
-	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", a.ClientId, a.ClientSecret)))
-}
-
-func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
-	status = 400 // bad request
-
-	u, er := url.Parse(a.PsUrl)
+func fetch[T any](httpAction, url string, headerValues map[string]string, strBody string) (status int, v T, resBody []byte, err error) {
+	req, er := http.NewRequest(httpAction, url, bytes.NewBuffer(([]byte(strBody))))
 	if er != nil {
-		err = fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
+		err = fmt.Errorf("failed to create new request %s : %s", url, er)
 		return
 	}
-
-	urlToken := fmt.Sprintf(strGetToken, u.Hostname())
-	body := []byte(`grant_type=client_credentials`)
-	req, er := http.NewRequest(http.MethodPost, urlToken, bytes.NewBuffer(body))
-	if er != nil {
-		err = fmt.Errorf("failed to create new request %s : %s", urlToken, er)
-		return
+	for k, s := range headerValues {
+		req.Header.Add(k, s)
 	}
-	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", a.toBase64()))
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
-	req.Header.Add("Accept", "application/json")
 
 	client := http.Client{
 		Timeout: 30 * time.Second,
@@ -69,37 +56,101 @@ func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
 
 	status = res.StatusCode
 
-	resBody, er := io.ReadAll(res.Body)
+	resBody, er = io.ReadAll(res.Body)
 	if er != nil {
 		err = fmt.Errorf("status = %d : failed reading body : %s", res.StatusCode, er)
 		return
 	}
 
-	if res.StatusCode != http.StatusOK {
-		err = fmt.Errorf("status = %d : %s", res.StatusCode, resBody)
-		return
+	if res.StatusCode == http.StatusOK {
+		er := json.Unmarshal(resBody, &v)
+		if er != nil {
+			err = fmt.Errorf("failed to translate response body : %s", er)
+		}
+	} else if res.StatusCode == http.StatusNoContent {
+		// do nothing, mybe return no content
 	} else {
+		err = fmt.Errorf("status = %d - body : %s", res.StatusCode, string(resBody))
+	}
 
+	return
+}
+
+func (a ApiConfig) TimeCheck() (int, string, error) {
+	var t string
+	status := 400
+
+	u, er := url.Parse(a.PsUrl)
+	if er != nil {
+		return status, t, fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
+	}
+
+	urlTime := fmt.Sprintf(strTimeCheck, u.Hostname())
+	req, er := http.NewRequest(http.MethodGet, urlTime, nil)
+	if er != nil {
+		return status, t, fmt.Errorf("failed to create new request %s : %s", urlTime, er)
+	}
+	req.Header.Add("Accept", "application/json")
+
+	client := http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	res, er := client.Do(req)
+	if er != nil {
+		return status, t, fmt.Errorf("failed to Client.Do : %s", er)
+	}
+	defer res.Body.Close()
+
+	status = res.StatusCode
+
+	resBody, er := io.ReadAll(res.Body)
+	if er != nil {
+		return status, t, fmt.Errorf("status = %d : failed reading body : %s", res.StatusCode, er)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return status, t, fmt.Errorf("status = %d : %s", res.StatusCode, resBody)
 	}
 
 	if res.StatusCode == http.StatusOK {
-		var t tokenResponse
-		er := json.Unmarshal(resBody, &t)
-		if er != nil {
-			err = fmt.Errorf("failed to translate response body to token : %s", er)
-			return
-		}
+		t = string(resBody)
+	}
 
-		token = t.Access_Token
-	} else {
+	return status, t, nil
+}
+
+func (a ApiConfig) toBase64() string {
+	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", a.ClientId, a.ClientSecret)))
+}
+
+func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
+	headers := make(map[string]string)
+	body := `grant_type=client_credentials`
+
+	headers["Authorization"] = fmt.Sprintf("Basic %s", a.toBase64())
+	headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8"
+	headers["Accept"] = "application/json"
+
+	u, er := url.Parse(a.PsUrl)
+	if er != nil {
+		err = fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
+		return
+	}
+
+	urlToken := fmt.Sprintf(strGetToken, u.Hostname())
+
+	status, tokenInfo, resBody, er := fetch[tokenResponse](http.MethodPost, urlToken, headers, body)
+	if er != nil {
 		var r authErrorDetails
 		er := json.Unmarshal(resBody, &r)
 		if er != nil {
-			err = fmt.Errorf("failed : status = %d : %s", res.StatusCode, r.ErrorDescription)
+			err = fmt.Errorf("failed : status = %d : %s", status, r.ErrorDescription)
 		} else {
-			err = fmt.Errorf("failed : status = %d : %s", res.StatusCode, er)
+			err = fmt.Errorf("failed : status = %d : %s", status, er)
 		}
-		return
+	} else {
+		token = tokenInfo.Access_Token
 	}
 
 	return

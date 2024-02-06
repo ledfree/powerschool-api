@@ -15,3 +15,14 @@ func TestGetToken(t *testing.T) {
 		t.Fatalf("fail : GetAccessToken - status code = %d; %s", s, err)
 	}
 }
+
+func TestTimeCheck(t *testing.T) {
+	ps := ApiConfig{TestUrl, TestClientId, TestClientSecret}
+
+	_, v, err := ps.TimeCheck()
+	if err != nil {
+		t.Fatalf("fail : TimeCheck - %s", err)
+	} else if v != "don't know" {
+		t.Fatalf("fail : TimeCheck value = %s", v)
+	}
+}

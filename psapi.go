@@ -36,7 +36,7 @@ type ApiConfig struct {
 type resourceTimeStruc struct {
 	Resource struct {
 		Time      string `json:"time"`
-		TimeStamp string `json:"timestamp"`
+		TimeStamp int64  `json:"timestamp"`
 	} `json:"resource"`
 }
 

@@ -33,6 +33,13 @@ type ApiConfig struct {
 	ClientSecret string
 }
 
+type resourceTimeStruc struct {
+	Resource struct {
+		Time      string `json:"time"`
+		TimeStamp string `json:"timestamp"`
+	} `json:"resource"`
+}
+
 func fetch[T any](httpAction, url string, headerValues map[string]string, strBody string) (status int, v T, resBody []byte, err error) {
 	req, er := http.NewRequest(httpAction, url, bytes.NewBuffer(([]byte(strBody))))
 	if er != nil {
@@ -76,9 +83,11 @@ func fetch[T any](httpAction, url string, headerValues map[string]string, strBod
 	return
 }
 
-func (a ApiConfig) TimeCheck() (int, string, error) {
-	var t string
-	status := 400
+func (a ApiConfig) TimeCheck() (status int, t string, err error) {
+	headers := make(map[string]string)
+	var emptyBody string
+
+	headers["Accept"] = "application/json"
 
 	u, er := url.Parse(a.PsUrl)
 	if er != nil {
@@ -86,38 +95,23 @@ func (a ApiConfig) TimeCheck() (int, string, error) {
 	}
 
 	urlTime := fmt.Sprintf(strTimeCheck, u.Hostname())
-	req, er := http.NewRequest(http.MethodGet, urlTime, nil)
+
+	status, timeInfo, resBody, er := fetch[resourceTimeStruc](http.MethodGet, urlTime, headers, emptyBody)
 	if er != nil {
-		return status, t, fmt.Errorf("failed to create new request %s : %s", urlTime, er)
-	}
-	req.Header.Add("Accept", "application/json")
-
-	client := http.Client{
-		Timeout: 30 * time.Second,
+		err = fmt.Errorf("status = %d : %s - %s", status, resBody, er)
+		return
 	}
 
-	res, er := client.Do(req)
-	if er != nil {
-		return status, t, fmt.Errorf("failed to Client.Do : %s", er)
-	}
-	defer res.Body.Close()
-
-	status = res.StatusCode
-
-	resBody, er := io.ReadAll(res.Body)
-	if er != nil {
-		return status, t, fmt.Errorf("status = %d : failed reading body : %s", res.StatusCode, er)
+	if status != http.StatusOK {
+		err = fmt.Errorf("status = %d : %s", status, resBody)
+		return
 	}
 
-	if res.StatusCode != http.StatusOK {
-		return status, t, fmt.Errorf("status = %d : %s", res.StatusCode, resBody)
+	if status == http.StatusOK {
+		t = timeInfo.Resource.Time
 	}
 
-	if res.StatusCode == http.StatusOK {
-		t = string(resBody)
-	}
-
-	return status, t, nil
+	return
 }
 
 func (a ApiConfig) toBase64() string {

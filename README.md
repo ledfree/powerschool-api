@@ -7,8 +7,7 @@ Go package for PowerSchool API access.
 ## Install
 
 * Requires Go 1.18 or above.
-* PowerSchool [OAuth.](https://support
-powerschool.com/developer/#/page/oauth)
+* PowerSchool [OAuth.](https://support.powerschool.com/developer/#/page/oauth)
 * PowerSchool [Access Request.](https://support.powerschool.com/developer/#/page/access-request---field-access)
 
 Install with `go get github.com/ledfree/powerschool-api`

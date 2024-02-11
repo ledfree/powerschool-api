@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	strGetToken  string = "https://%s/oauth/access_token/"
-	strTimeCheck string = "https://%s/ws/v1/time"
+	strGetToken        string = "https://%s/oauth/access_token/"
+	strTimeCheck       string = "https://%s/ws/v1/time"
+	strAreas           string = "https://%s/ws/schema/areas"
+	strApplicationJson string = `application/json`
 )
 
 type authErrorDetails struct {
@@ -33,11 +35,27 @@ type ApiConfig struct {
 	ClientSecret string
 }
 
-type resourceTimeStruc struct {
+type resourceTimeStruct struct {
 	Resource struct {
 		Time      string `json:"time"`
 		TimeStamp int64  `json:"timestamp"`
 	} `json:"resource"`
+}
+
+type schemaInfoStruct struct {
+	Name        string             `json:"name"`
+	UserVisible bool               `json:"userVisible,omitempty"`
+	Display     string             `json:"display,omitempty"`
+	SubAreas    []schemaInfoStruct `json:"subareas,omitempty"`
+	PrimaryKey  string             `json:"primaryKey,omitempty"`
+}
+
+type schemaStruct struct {
+	Areas []schemaInfoStruct `json:"areas"`
+}
+
+type tableStruct struct {
+	Tables []schemaInfoStruct `json:"tables"`
 }
 
 func fetch[T any](httpAction, url string, headerValues map[string]string, strBody string) (status int, v T, resBody []byte, err error) {
@@ -96,7 +114,7 @@ func (a ApiConfig) TimeCheck() (status int, t string, err error) {
 
 	urlTime := fmt.Sprintf(strTimeCheck, u.Hostname())
 
-	status, timeInfo, resBody, er := fetch[resourceTimeStruc](http.MethodGet, urlTime, headers, emptyBody)
+	status, timeInfo, resBody, er := fetch[resourceTimeStruct](http.MethodGet, urlTime, headers, emptyBody)
 	if er != nil {
 		err = fmt.Errorf("status = %d : %s - %s", status, resBody, er)
 		return
@@ -146,6 +164,39 @@ func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
 	} else {
 		token = tokenInfo.Access_Token
 	}
+
+	return
+}
+
+func (a ApiConfig) GetTest() (status int, err error) {
+	s, t, err := a.GetAccessToken()
+	if err != nil {
+		return
+	}
+	if s != http.StatusOK {
+		return
+	}
+
+	headers := make(map[string]string)
+	headers["Authorization"] = fmt.Sprintf("Bearer %s", t)
+	headers["Accept"] = strApplicationJson
+	headers["Content-Type"] = strApplicationJson
+
+	u, er := url.Parse(a.PsUrl)
+	if er != nil {
+		err = fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
+		return
+	}
+
+	urlAreas := fmt.Sprintf(strAreas, u.Hostname())
+
+	s, d, resp, err := fetch[schemaStruct](http.MethodGet, urlAreas, headers, "")
+	if err != nil {
+		return
+	}
+	fmt.Println(s)
+	fmt.Println(d)
+	fmt.Println(resp)
 
 	return
 }

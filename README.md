@@ -16,3 +16,14 @@ Install with `go get github.com/ledfree/powerschool-api`
 
 ## Index
 
+[type ApiConfig](#type-ApiConfig)
+
+### type ApiConfig
+
+```go
+type ApiConfig struct {
+  Access_Token string `json:"access_token"`
+  Token_Type   string `json:"token_type"`
+  Expires_In   string `json:"expires_in"`
+}
+```

@@ -8,13 +8,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
 const (
-	strGetToken        string = "https://%s/oauth/access_token/"
-	strTimeCheck       string = "https://%s/ws/v1/time"
-	strAreas           string = "https://%s/ws/schema/areas"
+	strGetToken        string = `https://%s/oauth/access_token/`
+	strTimeCheck       string = `https://%s/ws/v1/time`
+	strAreas           string = `https://%s/ws/schema/area`
+	strTables          string = `https://%s/ws/schema/table`
 	strApplicationJson string = `application/json`
 )
 
@@ -29,10 +31,19 @@ type tokenResponse struct {
 	Expires_In   string `json:"expires_in"`
 }
 
+func (t tokenResponse) Authorization() string {
+	return fmt.Sprintf("%s %s", t.Token_Type, t.Access_Token)
+}
+
 type ApiConfig struct {
 	PsUrl        string
 	ClientId     string
 	ClientSecret string
+}
+
+func (a ApiConfig) URL() (u *url.URL, err error) {
+	u, err = url.Parse(a.PsUrl)
+	return
 }
 
 type resourceTimeStruct struct {
@@ -50,12 +61,19 @@ type schemaInfoStruct struct {
 	PrimaryKey  string             `json:"primaryKey,omitempty"`
 }
 
-type schemaStruct struct {
-	Areas []schemaInfoStruct `json:"areas"`
+func (s schemaInfoStruct) String() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Name : %s\n", s.Name))
+	for _, v := range s.SubAreas {
+		sb.WriteString(fmt.Sprintf("  %s\n", v.String()))
+	}
+
+	return sb.String()
 }
 
-type tableStruct struct {
-	Tables []schemaInfoStruct `json:"tables"`
+type schemaStruct struct {
+	Areas  []schemaInfoStruct `json:"areas,omitempty"`
+	Tables []schemaInfoStruct `json:"tables,omitempty"`
 }
 
 func fetch[T any](httpAction, url string, headerValues map[string]string, strBody string) (status int, v T, resBody []byte, err error) {
@@ -107,7 +125,7 @@ func (a ApiConfig) TimeCheck() (status int, t string, err error) {
 
 	headers["Accept"] = "application/json"
 
-	u, er := url.Parse(a.PsUrl)
+	u, er := a.URL()
 	if er != nil {
 		return status, t, fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
 	}
@@ -136,7 +154,7 @@ func (a ApiConfig) toBase64() string {
 	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", a.ClientId, a.ClientSecret)))
 }
 
-func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
+func (a ApiConfig) GetAccessToken() (status int, token tokenResponse, err error) {
 	headers := make(map[string]string)
 	body := `grant_type=client_credentials`
 
@@ -144,7 +162,7 @@ func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
 	headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8"
 	headers["Accept"] = "application/json"
 
-	u, er := url.Parse(a.PsUrl)
+	u, er := a.URL()
 	if er != nil {
 		err = fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
 		return
@@ -152,7 +170,7 @@ func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
 
 	urlToken := fmt.Sprintf(strGetToken, u.Hostname())
 
-	status, tokenInfo, resBody, er := fetch[tokenResponse](http.MethodPost, urlToken, headers, body)
+	status, token, resBody, er := fetch[tokenResponse](http.MethodPost, urlToken, headers, body)
 	if er != nil {
 		var r authErrorDetails
 		er := json.Unmarshal(resBody, &r)
@@ -161,14 +179,12 @@ func (a ApiConfig) GetAccessToken() (status int, token string, err error) {
 		} else {
 			err = fmt.Errorf("failed : status = %d : %s", status, er)
 		}
-	} else {
-		token = tokenInfo.Access_Token
 	}
 
 	return
 }
 
-func (a ApiConfig) GetTest() (status int, err error) {
+func (a ApiConfig) GetAreas() (status int, d schemaStruct, err error) {
 	s, t, err := a.GetAccessToken()
 	if err != nil {
 		return
@@ -178,11 +194,11 @@ func (a ApiConfig) GetTest() (status int, err error) {
 	}
 
 	headers := make(map[string]string)
-	headers["Authorization"] = fmt.Sprintf("Bearer %s", t)
+	headers["Authorization"] = t.Authorization()
 	headers["Accept"] = strApplicationJson
 	headers["Content-Type"] = strApplicationJson
 
-	u, er := url.Parse(a.PsUrl)
+	u, er := a.URL()
 	if er != nil {
 		err = fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
 		return
@@ -190,13 +206,42 @@ func (a ApiConfig) GetTest() (status int, err error) {
 
 	urlAreas := fmt.Sprintf(strAreas, u.Hostname())
 
-	s, d, resp, err := fetch[schemaStruct](http.MethodGet, urlAreas, headers, "")
+	status, d, _, err = fetch[schemaStruct](http.MethodGet, urlAreas, headers, "")
+	if err != nil {
+		err = fmt.Errorf("status = %d - from request url %s - error : %s", status, urlAreas, err)
+		return
+	}
+
+	return
+}
+
+func (a ApiConfig) GetTables() (status int, d schemaStruct, err error) {
+	s, t, err := a.GetAccessToken()
 	if err != nil {
 		return
 	}
-	fmt.Println(s)
-	fmt.Println(d)
-	fmt.Println(resp)
+	if s != http.StatusOK {
+		return
+	}
+
+	headers := make(map[string]string)
+	headers["Authorization"] = t.Authorization()
+	headers["Accept"] = strApplicationJson
+	headers["Content-Type"] = strApplicationJson
+
+	u, er := a.URL()
+	if er != nil {
+		err = fmt.Errorf("invalid URL %s : %s", a.PsUrl, er)
+		return
+	}
+
+	urlTables := fmt.Sprintf(strTables, u.Hostname())
+
+	status, d, _, err = fetch[schemaStruct](http.MethodGet, urlTables, headers, "")
+	if err != nil {
+		err = fmt.Errorf("status = %d - from request url %s - error : %s", status, urlTables, err)
+		return
+	}
 
 	return
 }

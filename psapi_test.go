@@ -26,3 +26,16 @@ func TestTimeCheck(t *testing.T) {
 		t.Fatalf("fail : TimeCheck value = %s", v)
 	}
 }
+
+/*
+func TestGetAreas(t *testing.T) {
+	ps := ApiConfig{TestUrl, TestClientId, TestClientSecret}
+
+	s, err := ps.GetTest()
+	if err != nil {
+		t.Fatalf("fail : status = %d - %s", s, err)
+	} else if s != http.StatusOK {
+		t.Fatalf("fail : status = %d - %s", s, err)
+	}
+}
+*/
